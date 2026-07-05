@@ -1,8 +1,8 @@
 # LlamaTron-RS1-Rolex
 
-Fine-tuned Llama-3.2-1B-Instruct on 370k Medical Chain of Thought reasoning samples to achieve COT Thinking.
+[![View on Hugging Face](https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-sm.svg)](https://huggingface.co/Rumiii/LlamaTron-RS1-Rolex)
 
-<img width="1907" height="910" alt="Interface" src="https://github.com/user-attachments/assets/b0dad499-f8d7-4bd6-9bb1-855e086cba37" />
+Fine-tuned Llama-3.2-1B-Instruct for chain-of-thought medical reasoning, trained on the ReasonMed-370K dataset.
 
 ## Overview
 
@@ -10,9 +10,37 @@ This repository provides a merged, GGUF-format version of `meta-llama/Llama-3.2-
 
 **Disclaimer**: This model is for research, education, and prototyping only. It is not a medical device, diagnostic tool, or substitute for professional clinical judgment. Always consult a qualified healthcare professional for medical decisions.
 
+## Usage
+
+First, authenticate with the Hugging Face Hub:
+
+```bash
+hf auth login
+```
+
+**Using a pipeline (high-level helper):**
+
+```python
+from transformers import pipeline
+
+pipe = pipeline("text-generation", model="Rumiii/LlamaTron-RS1-Rolex")
+messages = [
+    {"role": "user", "content": "Who are you?"},
+]
+pipe(messages)
+```
+
+**Loading the model directly:**
+
+```python
+from transformers import AutoModel
+
+model = AutoModel.from_pretrained("Rumiii/LlamaTron-RS1-Rolex", dtype="auto")
+```
+
 ## Repository Contents
 
-This repository contains a single file:
+This repository also contains a standalone GGUF file for local, framework-free inference:
 
 ```
 llama3.2-1b-medical-reasonmed-fp16.gguf
@@ -20,7 +48,7 @@ llama3.2-1b-medical-reasonmed-fp16.gguf
 
 This is the merged model in FP16 GGUF format, ready to run with any GGUF-compatible runtime.
 
-## How to Use
+## Local GGUF Inference
 
 Download `llama3.2-1b-medical-reasonmed-fp16.gguf` and load it directly in any GGUF-compatible tool — no additional setup is required.
 
