@@ -1,6 +1,8 @@
 # LlamaTron-RS1-Rolex
 
-Fine-tuned Llama-3.2-1B-Instruct for chain-of-thought medical reasoning, trained on the ReasonMed-370K dataset.
+Fine-tuned Llama-3.2-1B-Instruct on 370k Medical Chain of Thought reasoning samples to achieve COT Thining.
+
+<img width="1907" height="910" alt="Interface" src="https://github.com/user-attachments/assets/b0dad499-f8d7-4bd6-9bb1-855e086cba37" />
 
 ## Overview
 
