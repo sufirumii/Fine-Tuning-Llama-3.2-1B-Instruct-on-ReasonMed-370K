@@ -1,0 +1,186 @@
+import os
+import json
+import torch
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    TrainingArguments,
+    Trainer,
+    DataCollatorForLanguageModeling
+)
+from datasets import Dataset
+from peft import LoraConfig, get_peft_model
+
+# ---------------- Configuration ----------------
+MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+DATASET_PATH = "/root/Dataset/reasonmed_1000.jsonl"  # Adjust if you uploaded elsewhere
+OUTPUT_DIR = "/root/Output"
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ---------------- Device ----------------
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
+
+# ---------------- Tokenizer ----------------
+print("📥 Loading tokenizer...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = "right"
+
+# ---------------- Model ----------------
+print("📥 Loading model...")
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    torch_dtype=torch.float16,
+    device_map="auto"  # auto-assign layers to GPU
+)
+
+# ---------------- LoRA Configuration ----------------
+print("🔧 Setting up LoRA...")
+lora_config = LoraConfig(
+    r=8,
+    lora_alpha=16,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM"
+)
+model = get_peft_model(model, lora_config).to(device)
+print("📊 Trainable parameters:")
+model.print_trainable_parameters()
+
+# ---------------- Load Dataset ----------------
+print("📂 Loading dataset...")
+data = []
+with open(DATASET_PATH, 'r', encoding='utf-8') as f:
+    for line in f:
+        data.append(json.loads(line))
+
+# ---------------- Tokenization Function ----------------
+def format_and_tokenize(examples):
+    formatted_texts = []
+    
+    for conv in examples['conversations']:
+        text = tokenizer.apply_chat_template(
+            conv,
+            tokenize=False,
+            add_generation_prompt=False
+        )
+        formatted_texts.append(text)
+    
+    tokenized = tokenizer(
+        formatted_texts,
+        padding="max_length",
+        truncation=True,
+        max_length=512,
+        return_tensors=None
+    )
+    tokenized["labels"] = tokenized["input_ids"].copy()
+    return tokenized
+
+# ---------------- Create Dataset ----------------
+dataset_dict = {"conversations": [item["conversations"] for item in data]}
+dataset = Dataset.from_dict(dataset_dict)
+print(f"📊 Dataset: {len(dataset)} examples")
+
+# ---------------- Tokenize ----------------
+print("🔧 Tokenizing...")
+tokenized_dataset = dataset.map(
+    format_and_tokenize,
+    batched=True,
+    batch_size=16,
+    remove_columns=dataset.column_names
+)
+
+# ---------------- Data Collator ----------------
+data_collator = DataCollatorForLanguageModeling(
+    tokenizer=tokenizer,
+    mlm=False
+)
+
+# ---------------- Training Arguments ----------------
+print("⚙️ Configuring training...")
+training_args = TrainingArguments(
+    output_dir=OUTPUT_DIR,
+    num_train_epochs=3,
+    per_device_train_batch_size=4,  # safe for H100
+    gradient_accumulation_steps=4,
+    learning_rate=2e-4,
+    warmup_steps=20,
+    logging_steps=50,
+    save_strategy="epoch",
+    save_total_limit=1,
+    dataloader_num_workers=2,
+    report_to="none",
+    push_to_hub=False,
+    remove_unused_columns=False,
+    optim="adafactor",
+    fp16=True,  # enable mixed precision
+    dataloader_pin_memory=True,
+)
+
+# ---------------- Trainer ----------------
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset,
+    data_collator=data_collator,
+)
+
+# ---------------- Train ----------------
+print("🏋️ Training LoRA adapters...")
+print(f"Epochs: {training_args.num_train_epochs}")
+print(f"Batch size: {training_args.per_device_train_batch_size}")
+
+trainer.train()
+
+# ---------------- Save LoRA Adapters ----------------
+print("💾 Saving LoRA adapters...")
+model.save_pretrained(OUTPUT_DIR)
+tokenizer.save_pretrained(OUTPUT_DIR)
+print(f"✅ Training complete! Model saved to: {OUTPUT_DIR}")
+
+# ---------------- Merge LoRA for GGUF Conversion ----------------
+print("🔗 Merging LoRA weights...")
+model = model.merge_and_unload()
+gguf_path = os.path.join(OUTPUT_DIR, "llama3_1b_instruct.gguf")
+# You can use `transformers-cli convert` or your preferred GGUF converter here
+print(f"✅ Ready for GGUF conversion: {gguf_path}")
+
+# ---------------- Quick Inference Test ----------------
+print("\n🧪 Testing fine-tuned model...")
+test_messages = [{
+    "role": "user",
+    "content": "A patient presents with severe headache and neck stiffness. What is the most likely diagnosis?\nA. Migraine\nB. Meningitis\nC. Tension headache\nD. Sinusitis"
+}]
+
+inputs = tokenizer.apply_chat_template(
+    test_messages,
+    add_generation_prompt=True,
+    tokenize=True,
+    return_tensors="pt",
+)
+inputs = {k: v.to(device) for k, v in inputs.items()}
+
+model.eval()
+with torch.no_grad():
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=300,
+        do_sample=True,
+        temperature=0.7,
+        top_p=0.9,
+        pad_token_id=tokenizer.eos_token_id
+    )
+
+response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+
+print("\n" + "="*70)
+print("TEST RESPONSE:")
+print("="*70)
+print(response)
+print("="*70)
+
+print("\n🎉 Your medical reasoning model is ready and GPU-optimized!")
+print(f"📂 Output directory: {OUTPUT_DIR}")
