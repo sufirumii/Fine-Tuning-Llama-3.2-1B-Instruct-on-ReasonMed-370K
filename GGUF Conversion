@@ -1,0 +1,89 @@
+import os
+import subprocess
+
+# Configuration
+MERGED_MODEL = "Merged"
+GGUF_OUTPUT = "GGUF"
+MODEL_NAME = "llama3.2-1b-medical-reasonmed"
+
+print("🔄 Converting merged model to GGUF format...")
+print(f"📂 Input: {MERGED_MODEL}")
+print(f"📁 Output: {GGUF_OUTPUT}")
+print("="*70)
+
+# Create output directory
+os.makedirs(GGUF_OUTPUT, exist_ok=True)
+
+# Clone llama.cpp if not exists
+if not os.path.exists("llama.cpp"):
+    print("\n📥 Cloning llama.cpp...")
+    subprocess.run(["git", "clone", "https://github.com/ggerganov/llama.cpp.git"], check=True)
+
+# Convert to GGUF (FP16 first)
+print("\n🔧 Converting to GGUF FP16...")
+convert_script = os.path.join("llama.cpp", "convert_hf_to_gguf.py")
+
+subprocess.run([
+    "python", convert_script,
+    MERGED_MODEL,
+    "--outfile", os.path.join(GGUF_OUTPUT, f"{MODEL_NAME}-fp16.gguf"),
+    "--outtype", "f16"
+], check=True)
+
+print("✅ FP16 GGUF created!")
+
+# Build llama.cpp quantize tool if needed
+print("\n🔨 Building llama.cpp quantize tool...")
+subprocess.run(["cmake", "-B", "llama.cpp/build", "llama.cpp"], check=True)
+subprocess.run(["cmake", "--build", "llama.cpp/build", "--config", "Release"], check=True)
+
+# Quantize to different formats
+print("\n⚙️ Quantizing to different formats...")
+
+quantize_exe = os.path.join("llama.cpp", "build", "bin", "llama-quantize")
+
+fp16_gguf = os.path.join(GGUF_OUTPUT, f"{MODEL_NAME}-fp16.gguf")
+
+# Q4_K_M (recommended - good balance)
+print("📦 Creating Q4_K_M (recommended)...")
+subprocess.run([
+    quantize_exe,
+    fp16_gguf,
+    os.path.join(GGUF_OUTPUT, f"{MODEL_NAME}-Q4_K_M.gguf"),
+    "Q4_K_M"
+], check=True)
+
+# Q5_K_M (higher quality)
+print("📦 Creating Q5_K_M (higher quality)...")
+subprocess.run([
+    quantize_exe,
+    fp16_gguf,
+    os.path.join(GGUF_OUTPUT, f"{MODEL_NAME}-Q5_K_M.gguf"),
+    "Q5_K_M"
+], check=True)
+
+# Q8_0 (highest quality)
+print("📦 Creating Q8_0 (highest quality)...")
+subprocess.run([
+    quantize_exe,
+    fp16_gguf,
+    os.path.join(GGUF_OUTPUT, f"{MODEL_NAME}-Q8_0.gguf"),
+    "Q8_0"
+], check=True)
+
+print("\n✅ All GGUF conversions complete!")
+print("="*70)
+
+# List all created files
+print("\n📊 Created GGUF files:")
+for file in sorted(os.listdir(GGUF_OUTPUT)):
+    if file.endswith(".gguf"):
+        size_mb = os.path.getsize(os.path.join(GGUF_OUTPUT, file)) / (1024**2)
+        print(f"   {file}: {size_mb:.2f} MB")
+
+print("\n🎉 GGUF conversion complete!")
+print(f"📁 Files saved to: {GGUF_OUTPUT}")
+print("\n💡 Recommended for local use: Q4_K_M.gguf (best balance)")
+print("   - Q4_K_M: ~800MB, fast inference, good quality")
+print("   - Q5_K_M: ~1GB, slower, better quality")
+print("   - Q8_0: ~1.3GB, slowest, highest quality")
