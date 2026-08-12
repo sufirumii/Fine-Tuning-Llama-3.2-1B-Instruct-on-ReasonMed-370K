@@ -1,5 +1,7 @@
 # LlamaTron-RS1-Rolex
 
+<img width="1173" height="1394" alt="image" src="https://github.com/user-attachments/assets/8f45bbbd-daff-43db-8f11-fc9472ec2f1f" />
+
 [![View on Hugging Face](https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-sm.svg)](https://huggingface.co/Rumiii/LlamaTron-RS1-Rolex)
 
 Fine-tuned Llama-3.2-1B-Instruct for chain-of-thought medical reasoning, trained on the ReasonMed-370K dataset.
